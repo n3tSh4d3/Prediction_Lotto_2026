@@ -98,3 +98,10 @@ python3 -c "from app import db, fetch; print(fetch.aggiorna_tutto(db.connect()))
 ```
 
 Utile per un cron giornaliero (le fonti si aggiornano la sera dopo le estrazioni).
+
+## Licenza
+
+Distribuito sotto i termini della **GNU General Public License v3.0**.
+Vedi il file [LICENSE](LICENSE) per il testo completo.
+
+Copyright (C) 2026 Adriano Condro
