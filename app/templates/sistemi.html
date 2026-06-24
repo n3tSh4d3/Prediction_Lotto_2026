@@ -1,0 +1,133 @@
+{% extends "base.html" %}
+{% block titolo %}Sistemi ridotti{% endblock %}
+{% block contenuto %}
+<h1 class="h3">Sistemi ridotti (covering design)</h1>
+<p class="text-muted">Dai numeri che vuoi giocare (es. quelli proposti dalle
+analisi), genera il minor numero di colonne tale che <strong>ogni</strong>
+combinazione di <em>garanzia</em> numeri tra i tuoi sia dentro almeno una
+colonna. Risultato: se almeno <em>garanzia</em> dei numeri estratti sono tra
+i tuoi, almeno una colonna realizza quella sorte — con molte meno colonne
+del sistema integrale. Non cambia la probabilità: elimina le ridondanze.</p>
+
+<form class="card mb-4" method="get" action="/sistemi">
+  <div class="card-body row g-3 align-items-end">
+    <div class="col-md-4">
+      <label class="form-label mb-0">Numeri del sistema (separati da virgola)</label>
+      <input type="text" name="numeri" class="form-control"
+             placeholder="es. 7, 18, 23, 31, 47, 55, 62, 74, 81, 90"
+             value="{{ numeri }}">
+    </div>
+    <div class="col-auto">
+      <label class="form-label mb-0">Numeri per colonna</label>
+      <input type="number" name="colonna" class="form-control" style="width:6rem"
+             min="2" max="10" value="{{ colonna }}">
+    </div>
+    <div class="col-auto">
+      <label class="form-label mb-0">Garanzia (sorte)</label>
+      <select name="garanzia" class="form-select">
+        {% for g, nome in SORTI.items() if g >= 2 %}
+        <option value="{{ g }}" {{ 'selected' if g == garanzia }}>{{ g }} — {{ nome }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="col-auto">
+      <label class="form-label mb-0">Gioco</label>
+      <select name="gioco" class="form-select">
+        <option value="lotto" {{ 'selected' if gioco == 'lotto' }}>Lotto</option>
+        <option value="superenalotto" {{ 'selected' if gioco == 'superenalotto' }}>SuperEnalotto (colonne da 6)</option>
+      </select>
+    </div>
+    <div class="col-auto">
+      <label class="form-label mb-0">Ruota</label>
+      <select name="ruota" class="form-select">
+        {% for r in RUOTE %}
+        <option value="{{ r }}" {{ 'selected' if r == ruota }}>{{ NOMI_RUOTE[r] }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="col-auto">
+      <button class="btn btn-primary">⚙ Genera sistema</button>
+    </div>
+  </div>
+</form>
+
+{% if errore %}<div class="alert alert-danger">{{ errore }}</div>{% endif %}
+
+{% if sistema %}
+<div class="card border-primary mb-4"><div class="card-body">
+  <h2 class="h5">Sistema: {{ sistema.v }} numeri, colonne da
+    {{ sistema.colonna }}, {{ sistema.sorte }} garantita</h2>
+  <p class="mb-1">Numeri:
+    {% for n in sistema.numeri %}<span class="numero">{{ n }}</span>{% endfor %}
+  </p>
+  <p class="mb-1"><strong>{{ sistema.colonne | length }} colonne</strong>
+    invece delle {{ '{:,}'.format(sistema.integrale).replace(',', '.') }} del
+    sistema integrale — risparmio del {{ sistema.risparmio }}%.
+    Tutte le {{ '{:,}'.format(sistema.combinazioni_coperte).replace(',', '.') }}
+    combinazioni di {{ sistema.garanzia }} numeri sono coperte (garanzia
+    verificata per costruzione).</p>
+  <p class="text-muted small mb-2">Significato: se almeno
+  {{ sistema.garanzia }} dei numeri estratti sono tra i tuoi
+  {{ sistema.v }}, almeno una colonna fa {{ sistema.sorte }}.</p>
+  <button class="btn btn-success" id="salva-tutte">💾 Salva tutte le colonne tra le giocate</button>
+  <span class="text-muted small" id="esito-tutte"></span>
+</div></div>
+
+<div class="card"><div class="card-body">
+  <h2 class="h5">Le colonne da presentare all'operatore</h2>
+  <table class="table table-sm align-middle">
+    <thead><tr><th>#</th><th>Colonna</th><th></th></tr></thead>
+    <tbody>
+    {% for c in sistema.colonne %}
+    <tr>
+      <td>{{ loop.index }}</td>
+      <td>{% for n in c %}<span class="numero">{{ n }}</span>{% endfor %}</td>
+      <td>
+        <form method="post" action="/giocate" class="salva-ajax d-inline">
+          <input type="hidden" name="gioco" value="{{ gioco }}">
+          <input type="hidden" name="ruota" value="{{ ruota if gioco == 'lotto' else '' }}">
+          <input type="hidden" name="numeri" value="{{ c | join(',') }}">
+          <input type="hidden" name="strategia"
+                 value="sistema-ridotto {{ sistema.v }}n/{{ sistema.sorte }} (col. {{ loop.index }}/{{ sistema.colonne | length }})">
+          <input type="hidden" name="note" value="">
+          <button class="btn btn-sm btn-outline-success">💾 Salva</button>
+        </form>
+      </td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div></div>
+
+<script>
+async function salvaForm(form) {
+  const bottone = form.querySelector('button');
+  bottone.disabled = true;
+  try {
+    const r = await fetch('/giocate', {method: 'POST', body: new FormData(form),
+                                       headers: {'Accept': 'application/json'}});
+    if (!r.ok) throw new Error(r.status);
+    const dati = await r.json();
+    bottone.textContent = '✓ #' + dati.id;
+    bottone.classList.replace('btn-outline-success', 'btn-outline-secondary');
+    return true;
+  } catch (e) {
+    bottone.disabled = false;
+    bottone.textContent = '⚠ riprova';
+    return false;
+  }
+}
+document.querySelectorAll('form.salva-ajax').forEach(f =>
+  f.addEventListener('submit', e => { e.preventDefault(); salvaForm(f); }));
+document.getElementById('salva-tutte').addEventListener('click', async () => {
+  const forms = Array.from(document.querySelectorAll('form.salva-ajax'));
+  let ok = 0;
+  for (const f of forms) {
+    if (!f.querySelector('button').disabled) { if (await salvaForm(f)) ok++; }
+  }
+  document.getElementById('esito-tutte').textContent =
+    ' salvate ' + ok + ' colonne';
+});
+</script>
+{% endif %}
+{% endblock %}

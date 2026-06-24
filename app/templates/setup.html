@@ -1,0 +1,139 @@
+{% extends "base.html" %}
+{% block titolo %}Setup{% endblock %}
+{% block contenuto %}
+<h1 class="h3">Setup analisi ML</h1>
+<p class="text-muted">Parametri usati dalla tab <a href="/ml">Analisi ML</a> e
+dalla strategia <code>ml</code> delle Previsioni. Dopo una modifica, ricalcola
+le analisi per applicarla.</p>
+
+{% if salvata %}<div class="alert alert-success">Configurazione salvata.</div>{% endif %}
+
+<form class="card" method="post" action="/setup">
+  <div class="card-body">
+    <div class="row g-3">
+      <div class="col-md-6">
+        <label class="form-label">Modello</label>
+        <select name="modello" class="form-select">
+          {% for chiave, nome in NOMI_MODELLI.items() %}
+          <option value="{{ chiave }}" {{ 'selected' if cfg.modello == chiave }}>{{ nome }}</option>
+          {% endfor %}
+        </select>
+        <div class="form-text">La regressione logistica è rapida e interpretabile;
+        random forest e gradient boosting colgono interazioni non lineari.</div>
+      </div>
+      <div class="col-md-6">
+        <label class="form-label">Finestre di frequenza (estrazioni, separate da virgola)</label>
+        <input type="text" name="finestre_frequenza" class="form-control"
+               value="{{ cfg.finestre_frequenza | join(', ') }}">
+        <div class="form-text">Su quanti orizzonti calcolare le frequenze usate
+        come feature (max 6 finestre).</div>
+      </div>
+      <div class="col-md-6">
+        <label class="form-label">Estrazioni di addestramento</label>
+        <input type="number" name="finestra_addestramento" class="form-control"
+               min="300" max="6000" value="{{ cfg.finestra_addestramento }}">
+        <div class="form-text">Quante estrazioni recenti usare per addestrare il
+        modello (300–6000).</div>
+      </div>
+      <div class="col-md-6">
+        <label class="form-label">Estrazioni di backtest</label>
+        <input type="number" name="backtest_estrazioni" class="form-control"
+               min="30" max="1000" value="{{ cfg.backtest_estrazioni }}">
+        <div class="form-text">Quante estrazioni finali riservare alla verifica
+        del modello (mai usate in addestramento, 30–1000).</div>
+      </div>
+      <div class="col-md-6">
+        <label class="form-label">Numeri puntati nel backtest</label>
+        <input type="number" name="numeri_giocata" class="form-control"
+               min="1" max="10" value="{{ cfg.numeri_giocata }}">
+        <div class="form-text">Quanti numeri “gioca” ogni strategia a ogni
+        estrazione simulata (1–10).</div>
+      </div>
+      <div class="col-md-6">
+        <label class="form-label">Gruppi di co-occorrenza</label>
+        <input type="number" name="cluster_k" class="form-control"
+               min="2" max="15" value="{{ cfg.cluster_k }}">
+        <div class="form-text">Numero di cluster k-means (2–15).</div>
+      </div>
+    </div>
+
+    <hr>
+    <h2 class="h5">Generatore neurale</h2>
+    <div class="row g-3">
+      <div class="col-md-4">
+        <label class="form-label">Estrazioni in ingresso (lag)</label>
+        <input type="number" name="gen_lag" class="form-control"
+               min="2" max="200" value="{{ cfg.gen_lag }}">
+        <div class="form-text">Quante estrazioni precedenti vede la rete (2–200).</div>
+      </div>
+      <div class="col-md-4">
+        <label class="form-label">Reti nel comitato</label>
+        <input type="number" name="gen_reti" class="form-control"
+               min="1" max="100" value="{{ cfg.gen_reti }}">
+        <div class="form-text">Reti con semi diversi, mediate (1–100).</div>
+      </div>
+      <div class="col-md-4">
+        <label class="form-label">Estrazioni generate</label>
+        <input type="number" name="gen_simulazioni" class="form-control"
+               min="100" max="200000" value="{{ cfg.gen_simulazioni }}">
+        <div class="form-text">Generazioni totali da mediare (100–200000).</div>
+      </div>
+      <div class="col-md-6">
+        <label class="form-label">Neuroni dei livelli nascosti</label>
+        <input type="text" name="gen_neuroni" class="form-control"
+               value="{{ cfg.gen_neuroni }}">
+        <div class="form-text">Separati da virgola, es. "512,256,128" o
+        "2048,2048,1024,512" (max 8192 per livello, livelli illimitati).</div>
+      </div>
+      <div class="col-md-3">
+        <label class="form-label">Epoche massime</label>
+        <input type="number" name="gen_epoche" class="form-control"
+               min="10" max="5000" value="{{ cfg.gen_epoche }}">
+        <div class="form-text">Epoche di addestramento per rete (10–5000).</div>
+      </div>
+      <div class="col-md-3">
+        <label class="form-label">Pazienza early stopping</label>
+        <input type="number" name="gen_pazienza" class="form-control"
+               min="0" max="500" value="{{ cfg.gen_pazienza }}">
+        <div class="form-text">Epoche senza miglioramenti prima di fermarsi.
+        <strong>0 = mai: addestra sempre tutte le epoche</strong> (è il motivo
+        per cui le reti grandi finiscono in 2 secondi: senza segnale
+        l'early stopping scatta subito).</div>
+      </div>
+      <div class="col-md-6">
+        <label class="form-label">Rumore sugli ingressi</label>
+        <input type="text" name="gen_rumore" class="form-control"
+               value="{{ cfg.gen_rumore }}">
+        <div class="form-text">Deviazione del disturbo gaussiano in frazione
+        della variabilità storica (0–2). 0 = generazioni tutte uguali.</div>
+      </div>
+      <div class="col-md-6">
+        <label class="form-label">Pausa MASTER tra le generazioni (secondi)</label>
+        <input type="number" name="master_pausa" class="form-control"
+               min="0" max="600" value="{{ cfg.master_pausa }}">
+        <div class="form-text">Riposo della GPU tra una configurazione e la
+        successiva (0–600 s). <strong>0 è tecnicamente sicuro</strong>: le GPU
+        sono progettate per il carico continuo e si autoproteggono riducendo
+        le frequenze sopra ~84 °C. La pausa serve ad abbassare la temperatura
+        media, il rumore delle ventole e a lasciare la scheda reattiva per il
+        desktop. Indicazione pratica: sotto 75 °C puoi usare 0–5 s; sopra
+        80 °C costanti, 15–30 s.</div>
+      </div>
+      <div class="col-md-6">
+        <label class="form-label">Dispositivo di calcolo (reti neurali:
+        classificatori e generatore)</label>
+        <select name="gen_dispositivo" class="form-select">
+          <option value="auto" {{ 'selected' if cfg.gen_dispositivo == 'auto' }}>auto — GPU se disponibile, altrimenti CPU</option>
+          <option value="gpu" {{ 'selected' if cfg.gen_dispositivo == 'gpu' }}>gpu — CUDA su scheda grafica (PyTorch)</option>
+          <option value="cpu" {{ 'selected' if cfg.gen_dispositivo == 'cpu' }}>cpu — scikit-learn, come prima</option>
+        </select>
+        <div class="form-text">Se scegli "gpu" ma CUDA non è disponibile,
+        ripiega su CPU segnalandolo nei risultati.</div>
+      </div>
+    </div>
+  </div>
+  <div class="card-footer">
+    <button class="btn btn-primary">💾 Salva configurazione</button>
+  </div>
+</form>
+{% endblock %}

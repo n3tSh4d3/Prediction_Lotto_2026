@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% block titolo %}Giocate{% endblock %}
+{% block contenuto %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h1 class="h3 mb-0">Giocate salvate</h1>
+  <form method="post" action="/giocate/verifica">
+    <button class="btn btn-primary">✓ Verifica esiti</button>
+  </form>
+</div>
+<p class="text-muted">Presenta i numeri all'operatore per effettuare la giocata.
+Dopo l'estrazione, aggiorna l'archivio e premi “Verifica esiti”: ogni giocata viene
+confrontata con la prima estrazione successiva alla data di salvataggio.</p>
+
+{% if not giocate %}
+<div class="alert alert-secondary">Nessuna giocata salvata. Creane una dalla pagina <a href="/previsioni">Previsioni</a>.</div>
+{% endif %}
+
+{% for g in giocate %}
+<div class="card mb-3"><div class="card-body">
+  <div class="d-flex justify-content-between">
+    <h2 class="h6 text-muted">#{{ g.id }} — {{ g.creata }} —
+      {{ 'Lotto, ruota di ' + NOMI_RUOTE[g.ruota] if g.gioco == 'lotto' else 'SuperEnalotto' }}
+      {% if g.strategia %} — strategia: {{ g.strategia }}{% endif %}</h2>
+    <form method="post" action="/giocate/{{ g.id }}/elimina"
+          onsubmit="return confirm('Eliminare la giocata #{{ g.id }}?')">
+      <button class="btn btn-sm btn-outline-danger">Elimina</button>
+    </form>
+  </div>
+  <p class="mb-1">
+    {% for n in g.numeri.split(',') %}
+      <span class="numero {{ 'oro' if g.esito and (n | int) in g.esito.indovinati }}">{{ n }}</span>
+    {% endfor %}
+  </p>
+  {% if g.note %}<p class="text-muted mb-1">{{ g.note }}</p>{% endif %}
+  {% if g.esito %}
+    <p class="mb-0">
+      Estrazione del {{ g.esito.data }}{% if g.esito.concorso %} (concorso {{ g.esito.concorso }}){% endif %}:
+      {% for n in g.esito.estratti %}<span class="numero grigio">{{ n }}</span>{% endfor %}
+      — <strong>{{ g.esito.sorte }}</strong>
+      {% if g.esito.indovinati %}(indovinati: {{ g.esito.indovinati | join(', ') }}){% endif %}
+    </p>
+  {% else %}
+    <p class="text-muted mb-0"><em>In attesa di verifica</em></p>
+  {% endif %}
+</div></div>
+{% endfor %}
+{% endblock %}

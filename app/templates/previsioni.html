@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+{% block titolo %}Previsioni{% endblock %}
+{% block contenuto %}
+<h1 class="h3">Genera una previsione</h1>
+<p class="text-muted">Le estrazioni sono eventi casuali e indipendenti: nessuna
+strategia aumenta la probabilità di vincita. Le strategie costruiscono giocate
+secondo criteri statistici espliciti.</p>
+
+<form class="card mb-4" method="get" action="/previsioni">
+  <div class="card-body row g-3 align-items-end">
+    <div class="col-auto">
+      <label class="form-label mb-0">Gioco</label>
+      <select name="gioco" class="form-select" onchange="this.form.submit()">
+        <option value="lotto" {{ 'selected' if gioco == 'lotto' }}>Lotto</option>
+        <option value="superenalotto" {{ 'selected' if gioco == 'superenalotto' }}>SuperEnalotto</option>
+      </select>
+    </div>
+    {% if gioco == 'lotto' %}
+    <div class="col-auto">
+      <label class="form-label mb-0">Ruota</label>
+      <select name="ruota" class="form-select">
+        {% for r in RUOTE %}
+        <option value="{{ r }}" {{ 'selected' if r == ruota }}>{{ NOMI_RUOTE[r] }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="col-auto">
+      <label class="form-label mb-0">Quanti numeri</label>
+      <input type="number" name="quanti" class="form-control" min="1" max="10" value="{{ quanti }}">
+    </div>
+    {% endif %}
+    <div class="col-auto">
+      <label class="form-label mb-0">Strategia</label>
+      <select name="strategia" class="form-select">
+        {% for s, descr in STRATEGIE.items() %}
+        {% if s != 'spia' or gioco == 'lotto' %}
+        <option value="{{ s }}" {{ 'selected' if s == strategia }}>{{ s }} — {{ descr }}</option>
+        {% endif %}
+        {% endfor %}
+      </select>
+    </div>
+    <div class="col-auto">
+      <button class="btn btn-primary" name="genera" value="1">Genera</button>
+    </div>
+  </div>
+</form>
+
+{% if errore %}<div class="alert alert-danger">{{ errore }}</div>{% endif %}
+
+{% if proposta %}
+<div class="card border-primary mb-4"><div class="card-body">
+  <h2 class="h5">Proposta di giocata
+    {% if gioco == 'lotto' %}— ruota di {{ NOMI_RUOTE[ruota] }}{% endif %}</h2>
+  <p class="fs-3 mb-2">
+    {% for n in proposta.numeri %}<span class="numero">{{ n }}</span>{% endfor %}
+  </p>
+  <p class="text-muted">{{ proposta.spiegazione }}</p>
+  <form method="post" action="/giocate" class="row g-2">
+    <input type="hidden" name="gioco" value="{{ gioco }}">
+    <input type="hidden" name="ruota" value="{{ ruota if gioco == 'lotto' else '' }}">
+    <input type="hidden" name="numeri" value="{{ proposta.numeri | join(',') }}">
+    <input type="hidden" name="strategia" value="{{ strategia }}">
+    <div class="col-auto flex-grow-1">
+      <input type="text" name="note" class="form-control" placeholder="Note (facoltative)">
+    </div>
+    <div class="col-auto">
+      <button class="btn btn-success">💾 Salva tra le giocate</button>
+    </div>
+  </form>
+</div></div>
+{% endif %}
+{% endblock %}

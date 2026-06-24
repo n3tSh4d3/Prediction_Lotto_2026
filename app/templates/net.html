@@ -1,0 +1,175 @@
+{% extends "base.html" %}
+{% block titolo %}Analisi NET{% endblock %}
+{% block contenuto %}
+<h1 class="h3">Analisi NET</h1>
+<p class="text-muted">Attiva le analisi che vuoi eseguire sulla base dati
+selezionata: tutte le estrazioni di una ruota del Lotto, oppure la lista unica
+del SuperEnalotto. Ogni algoritmo restituisce i suoi numeri probabili; il
+pannello di convergenza evidenzia i numeri proposti da più analisi.</p>
+
+<form class="card mb-4" method="get" action="/net">
+  <div class="card-body">
+    <div class="row g-3 align-items-end mb-3">
+      <div class="col-auto">
+        <label class="form-label mb-0">Base dati</label>
+        <select name="gioco" class="form-select"
+                onchange="document.getElementById('sel-ruota').style.display = this.value === 'lotto' ? '' : 'none'">
+          <option value="lotto" {{ 'selected' if gioco == 'lotto' }}>Lotto — singola ruota</option>
+          <option value="superenalotto" {{ 'selected' if gioco == 'superenalotto' }}>SuperEnalotto — lista unica</option>
+        </select>
+      </div>
+      <div class="col-auto" id="sel-ruota" {% if gioco != 'lotto' %}style="display:none"{% endif %}>
+        <label class="form-label mb-0">Ruota</label>
+        <select name="ruota" class="form-select">
+          {% for r in RUOTE %}
+          <option value="{{ r }}" {{ 'selected' if r == ruota }}>{{ NOMI_RUOTE[r] }}</option>
+          {% endfor %}
+        </select>
+      </div>
+    </div>
+
+    <h2 class="h6">Analisi disponibili</h2>
+    {% for chiave, alg in algoritmi.items() %}
+    <div class="border rounded p-2 mb-2">
+      <div class="form-check">
+        <input class="form-check-input" type="checkbox" name="attivi"
+               value="{{ chiave }}" id="chk-{{ chiave }}"
+               {{ 'checked' if chiave in attivi }}>
+        <label class="form-check-label" for="chk-{{ chiave }}">
+          <strong>{{ alg.titolo }}</strong></label>
+        <div class="text-muted small">{{ alg.descrizione }}</div>
+      </div>
+      {% if alg.parametri %}
+      <div class="row g-2 mt-1 align-items-end">
+        {% for nome, default in alg.parametri.items() %}
+        {% set valore = parametri.get(chiave ~ '__' ~ nome, default) %}
+        {% if default is boolean %}
+        <div class="col-auto">
+          <div class="form-check form-switch">
+            <input type="hidden" name="{{ chiave }}__{{ nome }}" value="0">
+            <input class="form-check-input" type="checkbox" value="1"
+                   name="{{ chiave }}__{{ nome }}" id="par-{{ chiave }}-{{ nome }}"
+                   {{ 'checked' if valore in (true, '1', 'on') }}>
+            <label class="form-check-label small" for="par-{{ chiave }}-{{ nome }}">{{ nome }}</label>
+          </div>
+        </div>
+        {% elif default is sequence and default is not string %}
+        <div class="col-auto">
+          <label class="form-label small mb-0">{{ nome }}</label>
+          <select class="form-select form-select-sm" name="{{ chiave }}__{{ nome }}">
+            {% for opzione in default %}
+            <option value="{{ opzione }}"
+                    {{ 'selected' if valore == opzione or (valore == default and loop.first) }}>{{ opzione }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        {% else %}
+        <div class="col-auto">
+          <label class="form-label small mb-0">{{ nome }}</label>
+          <input type="text" class="form-control form-control-sm"
+                 name="{{ chiave }}__{{ nome }}" value="{{ valore }}">
+        </div>
+        {% endif %}
+        {% endfor %}
+      </div>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </div>
+  <div class="card-footer">
+    <button class="btn btn-primary">▶ Esegui analisi attive</button>
+  </div>
+</form>
+
+{% if risultati is not none %}
+  {% if not risultati %}
+  <div class="alert alert-secondary">Nessuna analisi selezionata.</div>
+  {% endif %}
+
+  {% for r in risultati %}
+  <div class="card mb-3 {{ 'border-danger' if r.errore }}"><div class="card-body">
+    <h2 class="h5">{{ r.titolo }}
+      {% if r.parametri %}<small class="text-muted">
+        ({% for k, v in r.parametri.items() %}{{ k }}={{ v }}{{ ', ' if not loop.last }}{% endfor %})
+      </small>{% endif %}</h2>
+    {% if r.errore %}
+      <p class="text-danger mb-0">Errore: {{ r.errore }}</p>
+    {% elif not r.numeri %}
+      <p class="text-muted mb-0">Nessun numero proposto con questi parametri.</p>
+    {% else %}
+      <p class="fs-4 mb-1">
+        {% for n in r.numeri %}<span class="numero">{{ n }}</span>{% endfor %}
+      </p>
+      {% if r.dettagli %}<p class="text-muted mb-2">{{ r.dettagli }}</p>{% endif %}
+      <form method="post" action="/giocate" class="row g-2 salva-ajax">
+        <input type="hidden" name="gioco" value="{{ gioco }}">
+        <input type="hidden" name="ruota" value="{{ ruota if gioco == 'lotto' else '' }}">
+        <input type="hidden" name="numeri" value="{{ r.numeri | join(',') }}">
+        <input type="hidden" name="strategia"
+               value="net:{{ r.chiave }}{% if r.parametri %} ({% for k, v in r.parametri.items() %}{{ k }}={{ v }}{{ ', ' if not loop.last }}{% endfor %}){% endif %}">
+        <div class="col-auto flex-grow-1">
+          <input type="text" name="note" class="form-control form-control-sm"
+                 placeholder="Note (facoltative)">
+        </div>
+        <div class="col-auto">
+          <button class="btn btn-sm btn-success">💾 Salva tra le giocate</button>
+        </div>
+      </form>
+    {% endif %}
+  </div></div>
+  {% endfor %}
+
+  {% if risultati | length > 1 %}
+  <div class="card border-primary"><div class="card-body">
+    <h2 class="h5">Convergenza tra le analisi</h2>
+    {% if convergenza %}
+      <p class="mb-2">
+        {% for n, c in convergenza %}
+        <span class="numero oro" title="proposto da {{ c }} analisi">{{ n }}</span>
+        <small class="text-muted me-2">×{{ c }}</small>
+        {% endfor %}
+      </p>
+      <form method="post" action="/giocate" class="row g-2 salva-ajax">
+        <input type="hidden" name="gioco" value="{{ gioco }}">
+        <input type="hidden" name="ruota" value="{{ ruota if gioco == 'lotto' else '' }}">
+        <input type="hidden" name="numeri"
+               value="{% for n, c in convergenza %}{{ n }}{{ ',' if not loop.last }}{% endfor %}">
+        <input type="hidden" name="strategia" value="net:convergenza ({{ attivi | join(' + ') }})">
+        <div class="col-auto flex-grow-1">
+          <input type="text" name="note" class="form-control form-control-sm"
+                 placeholder="Note (facoltative)">
+        </div>
+        <div class="col-auto">
+          <button class="btn btn-sm btn-success">💾 Salva i numeri convergenti</button>
+        </div>
+      </form>
+    {% else %}
+      <p class="text-muted mb-0">Nessun numero proposto da più di un'analisi.</p>
+    {% endif %}
+  </div></div>
+  {% endif %}
+
+<script>
+document.querySelectorAll('form.salva-ajax').forEach(form => {
+  form.addEventListener('submit', async evento => {
+    evento.preventDefault();
+    const bottone = form.querySelector('button');
+    bottone.disabled = true;
+    try {
+      const risposta = await fetch('/giocate', {
+        method: 'POST', body: new FormData(form),
+        headers: {'Accept': 'application/json'}
+      });
+      if (!risposta.ok) throw new Error(risposta.status);
+      const dati = await risposta.json();
+      bottone.textContent = '✓ Salvata (giocata #' + dati.id + ')';
+      bottone.classList.replace('btn-success', 'btn-outline-secondary');
+    } catch (e) {
+      bottone.disabled = false;
+      bottone.textContent = '⚠ Errore, riprova';
+    }
+  });
+});
+</script>
+{% endif %}
+{% endblock %}

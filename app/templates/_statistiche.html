@@ -1,0 +1,108 @@
+{# Blocchi statistici condivisi tra Lotto e SuperEnalotto.
+   Richiede: freq, rit, coppie, distr, top_freq, top_rit, (opz.) terzine #}
+
+<div class="row g-3 mb-4">
+  <div class="col-lg-6">
+    <div class="card h-100"><div class="card-body">
+      <h2 class="h5">Più frequenti</h2>
+      <table class="table table-sm">
+        <thead><tr><th>Numero</th><th>Uscite</th></tr></thead>
+        <tbody>
+        {% for n in top_freq %}
+          <tr><td><span class="numero">{{ n }}</span></td><td>{{ freq[n] }}</td></tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div></div>
+  </div>
+  <div class="col-lg-6">
+    <div class="card h-100"><div class="card-body">
+      <h2 class="h5">Più ritardatari</h2>
+      <table class="table table-sm">
+        <thead><tr><th>Numero</th><th>Ritardo attuale</th><th>Record storico</th></tr></thead>
+        <tbody>
+        {% for n in top_rit %}
+          <tr><td><span class="numero grigio">{{ n }}</span></td>
+              <td>{{ rit[n].attuale }}</td><td>{{ rit[n].massimo }}</td></tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div></div>
+  </div>
+</div>
+
+<div class="card mb-4"><div class="card-body">
+  <h2 class="h5">Frequenza di tutti i numeri</h2>
+  <canvas id="graficoFreq" height="80"></canvas>
+</div></div>
+
+{% if distr %}
+<div class="row g-3 mb-4">
+  <div class="col-lg-5">
+    <div class="card h-100"><div class="card-body">
+      <h2 class="h5">Pattern d'insieme</h2>
+      <ul class="mb-0">
+        <li>Estrazioni analizzate: {{ distr.estrazioni }}</li>
+        <li>Numeri pari: {{ distr.pct_pari }}% — dispari: {{ (100 - distr.pct_pari) | round(1) }}%</li>
+        <li>Numeri bassi (1-45): {{ distr.pct_bassi }}% — alti: {{ (100 - distr.pct_bassi) | round(1) }}%</li>
+        <li>Somma estrazione: media {{ distr.somma_media }} (min {{ distr.somma_min }}, max {{ distr.somma_max }})</li>
+      </ul>
+    </div></div>
+  </div>
+  <div class="col-lg-7">
+    <div class="card h-100"><div class="card-body">
+      <h2 class="h5">Distribuzione per decine</h2>
+      <canvas id="graficoDecine" height="120"></canvas>
+    </div></div>
+  </div>
+</div>
+{% endif %}
+
+<div class="row g-3 mb-4">
+  <div class="col-lg-6">
+    <div class="card h-100"><div class="card-body">
+      <h2 class="h5">Coppie più frequenti</h2>
+      <table class="table table-sm mb-0">
+        {% for combo, c in coppie %}
+        <tr><td>{% for n in combo %}<span class="numero">{{ n }}</span>{% endfor %}</td>
+            <td class="align-middle">{{ c }} volte</td></tr>
+        {% endfor %}
+      </table>
+    </div></div>
+  </div>
+  {% if terzine is defined and terzine %}
+  <div class="col-lg-6">
+    <div class="card h-100"><div class="card-body">
+      <h2 class="h5">Terzine più frequenti</h2>
+      <table class="table table-sm mb-0">
+        {% for combo, c in terzine %}
+        <tr><td>{% for n in combo %}<span class="numero">{{ n }}</span>{% endfor %}</td>
+            <td class="align-middle">{{ c }} volte</td></tr>
+        {% endfor %}
+      </table>
+    </div></div>
+  </div>
+  {% endif %}
+</div>
+
+<script>
+const freq = {{ freq | tojson }};
+new Chart(document.getElementById('graficoFreq'), {
+  type: 'bar',
+  data: {
+    labels: Object.keys(freq),
+    datasets: [{ label: 'uscite', data: Object.values(freq), backgroundColor: '#0d6efd' }]
+  },
+  options: { plugins: { legend: { display: false } } }
+});
+{% if distr %}
+new Chart(document.getElementById('graficoDecine'), {
+  type: 'bar',
+  data: {
+    labels: ['1-10','11-20','21-30','31-40','41-50','51-60','61-70','71-80','81-90'],
+    datasets: [{ label: 'uscite', data: {{ distr.decine | tojson }}, backgroundColor: '#198754' }]
+  },
+  options: { plugins: { legend: { display: false } } }
+});
+{% endif %}
+</script>

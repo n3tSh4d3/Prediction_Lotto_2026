@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% block titolo %}Statistiche SuperEnalotto{% endblock %}
+{% block contenuto %}
+<h1 class="h3">Statistiche SuperEnalotto</h1>
+
+<form class="row g-2 align-items-end mb-4" method="get" action="/superenalotto">
+  <div class="col-auto">
+    <label class="form-label mb-0">Periodo</label>
+    <select name="finestra" class="form-select">
+      <option value="0" {{ 'selected' if not finestra }}>Tutto lo storico</option>
+      {% for f in [50, 100, 300, 1000] %}
+      <option value="{{ f }}" {{ 'selected' if finestra == f }}>Ultimi {{ f }} concorsi</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div class="col-auto"><button class="btn btn-primary">Applica</button></div>
+</form>
+
+{% include "_statistiche.html" %}
+{% endblock %}

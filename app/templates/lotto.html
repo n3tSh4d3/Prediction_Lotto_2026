@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% block titolo %}Statistiche Lotto{% endblock %}
+{% block contenuto %}
+<h1 class="h3">Statistiche Lotto — ruota di {{ NOMI_RUOTE[ruota] }}</h1>
+
+<form class="row g-2 align-items-end mb-4" method="get" action="/lotto">
+  <div class="col-auto">
+    <label class="form-label mb-0">Ruota</label>
+    <select name="ruota" class="form-select">
+      {% for r in RUOTE %}
+      <option value="{{ r }}" {{ 'selected' if r == ruota }}>{{ NOMI_RUOTE[r] }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div class="col-auto">
+    <label class="form-label mb-0">Periodo</label>
+    <select name="finestra" class="form-select">
+      <option value="0" {{ 'selected' if not finestra }}>Tutto lo storico</option>
+      {% for f in [50, 100, 300, 1000] %}
+      <option value="{{ f }}" {{ 'selected' if finestra == f }}>Ultime {{ f }} estrazioni</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div class="col-auto"><button class="btn btn-primary">Applica</button></div>
+</form>
+
+{% include "_statistiche.html" %}
+
+<div class="card"><div class="card-body">
+  <h2 class="h5">Numeri spia</h2>
+  <p class="text-muted">Dopo un'uscita del numero scelto, quali numeri sono usciti
+  più spesso nell'estrazione successiva su questa ruota?</p>
+  <form class="row g-2 mb-3" method="get" action="/lotto">
+    <input type="hidden" name="ruota" value="{{ ruota }}">
+    <input type="hidden" name="finestra" value="{{ finestra }}">
+    <div class="col-auto">
+      <input type="number" name="spia" min="1" max="90" class="form-control"
+             placeholder="Numero 1-90" value="{{ spia or '' }}" required>
+    </div>
+    <div class="col-auto"><button class="btn btn-outline-primary">Analizza</button></div>
+  </form>
+  {% if dati_spia %}
+    <p>Il numero <span class="numero grigio">{{ spia }}</span> è uscito
+    {{ dati_spia.occorrenze }} volte su questa ruota. Nelle estrazioni successive
+    i numeri più frequenti sono stati:</p>
+    <table class="table table-sm mb-0">
+      {% for n, c in dati_spia.seguenti %}
+      <tr><td><span class="numero">{{ n }}</span></td><td class="align-middle">{{ c }} volte</td></tr>
+      {% endfor %}
+    </table>
+  {% endif %}
+</div></div>
+{% endblock %}

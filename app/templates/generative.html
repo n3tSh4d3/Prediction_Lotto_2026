@@ -1,0 +1,277 @@
+{% extends "base.html" %}
+{% block titolo %}Analisi Generative{% endblock %}
+{% block contenuto %}
+<h1 class="h3">Analisi Generative — ricostruzione sequenziale</h1>
+<p class="text-muted">Un generatore casuale estrae combinazioni finché non
+trova quella successiva dello storico, registrando <strong>quanti tentativi</strong>
+servono per ogni transizione (in media {{ '%.0f' | format(43949268 if gioco == 'lotto' else 622614630) }}).
+Se la serie dei conteggi formasse una forma d'onda, il prossimo conteggio
+sarebbe prevedibile — e con lui la prossima estrazione. Qui l'esperimento si
+fa per davvero, con tutte le analisi del caso.</p>
+
+{% if errore %}<div class="alert alert-danger">{{ errore }}</div>{% endif %}
+
+<form class="card mb-4" method="post" action="/generative/avvia" id="form-avvio">
+  <div class="card-body row g-3 align-items-end">
+    <div class="col-auto">
+      <label class="form-label mb-0">Gioco</label>
+      <select name="gioco" class="form-select"
+              onchange="window.location = '/generative?gioco=' + this.value + '&ruota={{ ruota }}'">
+        <option value="lotto" {{ 'selected' if gioco == 'lotto' }}>Lotto</option>
+        <option value="superenalotto" {{ 'selected' if gioco == 'superenalotto' }}>SuperEnalotto</option>
+      </select>
+    </div>
+    <div class="col-auto" {% if gioco != 'lotto' %}style="display:none"{% endif %}>
+      <label class="form-label mb-0">Ruota</label>
+      <select name="ruota" class="form-select"
+              onchange="window.location = '/generative?gioco={{ gioco }}&ruota=' + this.value">
+        {% for r in RUOTE %}
+        <option value="{{ r }}" {{ 'selected' if r == ruota }}>{{ NOMI_RUOTE[r] }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="col-auto">
+      <label class="form-label mb-0">Transizioni</label>
+      <input type="number" name="transizioni" class="form-control" style="width:7rem"
+             min="2" max="500" value="60">
+    </div>
+    <div class="col-auto">
+      <label class="form-label mb-0">Seme</label>
+      <input type="number" name="seme" class="form-control" style="width:7rem"
+             value="1234">
+    </div>
+    <div class="col-auto">
+      <label class="form-label mb-0">Dispositivo</label>
+      <select name="dispositivo" class="form-select">
+        <option value="auto">auto</option>
+        <option value="gpu">gpu</option>
+        <option value="cpu">cpu</option>
+      </select>
+    </div>
+    <div class="col-auto">
+      {% if stato.attivo %}
+      <button class="btn btn-secondary" disabled>già in corso…</button>
+      {% else %}
+      <button class="btn btn-primary">▶ Avvia ricostruzione</button>
+      {% endif %}
+    </div>
+    <div class="col-auto text-muted small">
+      Lotto: ~0,5-2 s a transizione su GPU. SuperEnalotto: ~10-30 s
+      (le sestine possibili sono 14 volte di più). Il seme rende
+      l'esperimento riproducibile; cambialo per la controprova.
+    </div>
+  </div>
+</form>
+
+<div class="card mb-4 border-info" id="monitor" style="display:none">
+  <div class="card-body">
+    <div class="d-flex justify-content-between align-items-start">
+      <h2 class="h5">Monitor live</h2>
+      <form method="post" action="/generative/ferma">
+        <input type="hidden" name="gioco" value="{{ gioco }}">
+        <input type="hidden" name="ruota" value="{{ ruota }}">
+        <button class="btn btn-sm btn-danger">■ Ferma</button>
+      </form>
+    </div>
+    <p class="mb-1">🖥 <span id="mon-gpu" class="text-muted">—</span></p>
+    <p class="mb-1">⚙ Fase: <strong id="mon-fase">—</strong></p>
+    <p class="mb-1">🎯 Transizione <strong id="mon-trans">—</strong> —
+      bersaglio: <span id="mon-bersaglio">—</span></p>
+    <p class="mb-2">🎲 Tentativi sulla transizione corrente:
+      <strong id="mon-tentativi">0</strong></p>
+    <div style="max-height: 14rem; overflow-y: auto">
+      <table class="table table-sm table-striped small mb-0">
+        <thead><tr><th>#</th><th>Data</th><th>Estrazione ricostruita</th>
+          <th>Tentativi</th><th>s</th></tr></thead>
+        <tbody id="mon-righe"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+<p class="small text-muted" id="esito-riga" style="display:none">
+  Ultima esecuzione: <span id="mon-esito"></span></p>
+
+{% if risultati %}
+<p class="text-muted small">Esperimento del {{ risultati.aggiornata }} su
+{{ risultati.dispositivo }} — stato <strong>{{ risultati.stato }}</strong>,
+{{ risultati.righe | length }}/{{ risultati.parametri.transizioni }} transizioni,
+seme {{ risultati.parametri.seme }}. Punto di partenza:
+{{ risultati.partenza.data }} ({{ risultati.partenza.numeri | join(', ') }}).
+Combinazioni possibili: {{ '{:,}'.format(risultati.teorica).replace(',', '.') }}.</p>
+
+<div class="card mb-4"><div class="card-body">
+  <h2 class="h5">La forma d'onda dei tentativi</h2>
+  <canvas id="graficoOnda" height="80"></canvas>
+  <p class="text-muted small mt-1 mb-0">Linea tratteggiata = attesa teorica
+  ({{ '{:,}'.format(risultati.teorica).replace(',', '.') }} tentativi, la media
+  di una geometrica su {{ '{:,}'.format(risultati.teorica).replace(',', '.') }}
+  combinazioni).</p>
+</div></div>
+
+{% if risultati.analisi %}
+<div class="row g-3 mb-4">
+  <div class="col-lg-6">
+    <div class="card h-100"><div class="card-body">
+      <h2 class="h5">Le analisi del caso</h2>
+      <ul class="mb-2">
+        <li>Tentativi: media <strong>{{ '{:,}'.format(risultati.analisi.media).replace(',', '.') }}</strong>,
+          mediana {{ '{:,}'.format(risultati.analisi.mediana).replace(',', '.') }},
+          dev. std {{ '{:,}'.format(risultati.analisi.dev_std).replace(',', '.') }}</li>
+        <li>Rapporto con la teoria: media/teorica =
+          <strong>{{ risultati.analisi.rapporto_media }}</strong>,
+          dev/teorica = {{ risultati.analisi.rapporto_dev }}
+          (geometrica pura: entrambi ≈ 1)</li>
+        <li>Autocorrelazioni (lag 1…{{ risultati.analisi.acf | length }}):
+          {{ risultati.analisi.acf | join(', ') }}
+          — soglia del rumore: ±{{ risultati.analisi.soglia_acf }}</li>
+        <li>Piattezza spettrale: <strong>{{ risultati.analisi.piattezza }}</strong>
+          (1 = rumore bianco, vicino a 0 = onda periodica)</li>
+      </ul>
+      <div class="alert {{ 'alert-warning' if risultati.analisi.onda else 'alert-success' }} mb-0">
+        {{ risultati.analisi.verdetto }}
+      </div>
+    </div></div>
+  </div>
+  <div class="col-lg-6">
+    <div class="card mb-3"><div class="card-body">
+      <h3 class="h6">Distribuzione dei tentativi (in unità di attesa teorica)</h3>
+      <canvas id="graficoIsto" height="110"></canvas>
+    </div></div>
+    <div class="card"><div class="card-body">
+      <h3 class="h6">Spettro della serie (periodogramma)</h3>
+      <canvas id="graficoSpettro" height="80"></canvas>
+    </div></div>
+  </div>
+</div>
+
+{% if risultati.previsione %}
+<div class="card border-primary mb-4"><div class="card-body">
+  <h2 class="h5">La previsione secondo la teoria</h2>
+  <p class="mb-1">Modello d'onda AR(1) (autocorrelazione lag-1 =
+  {{ risultati.analisi.acf1 }}): prossimo conteggio previsto =
+  <strong>{{ '{:,}'.format(risultati.previsione.tentativo_previsto).replace(',', '.') }}</strong>
+  tentativi. La combinazione che il generatore produce esattamente a quel
+  tentativo:</p>
+  <p class="fs-3 mb-2">
+    {% for n in risultati.previsione.numeri %}<span class="numero">{{ n }}</span>{% endfor %}
+  </p>
+  <p class="text-muted small">{{ risultati.previsione.nota }}</p>
+  <form method="post" action="/giocate" class="row g-2">
+    <input type="hidden" name="gioco" value="{{ risultati.gioco }}">
+    <input type="hidden" name="ruota" value="{{ risultati.ruota or '' }}">
+    <input type="hidden" name="numeri" value="{{ risultati.previsione.numeri | join(',') }}">
+    <input type="hidden" name="strategia"
+           value="generativa-onda (seme {{ risultati.parametri.seme }}, {{ risultati.parametri.transizioni }} transizioni)">
+    <div class="col-auto flex-grow-1">
+      <input type="text" name="note" class="form-control form-control-sm" placeholder="Note (facoltative)">
+    </div>
+    <div class="col-auto"><button class="btn btn-sm btn-success">💾 Salva tra le giocate</button></div>
+  </form>
+</div></div>
+{% endif %}
+{% endif %}
+
+<div class="card mb-4"><div class="card-body">
+  <h2 class="h5">Le estrazioni ricostruite</h2>
+  <div style="max-height: 22rem; overflow-y: auto">
+    <table class="table table-sm table-striped small mb-0">
+      <thead><tr><th>#</th><th>Data</th><th>Estrazione</th>
+        <th>Tentativi per ottenerla</th><th>Secondi</th></tr></thead>
+      <tbody>
+      {% for r in risultati.righe %}
+      <tr><td>{{ r.n }}</td><td>{{ r.data }}</td>
+        <td>{{ r.numeri | join(', ') }}</td>
+        <td>{{ '{:,}'.format(r.tentativi).replace(',', '.') }}</td>
+        <td>{{ r.secondi }}</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div></div>
+
+<script>
+const righe = {{ risultati.righe | tojson }};
+const teorica = {{ risultati.teorica }};
+new Chart(document.getElementById('graficoOnda'), {
+  type: 'line',
+  data: {
+    labels: righe.map(r => '#' + r.n),
+    datasets: [
+      { label: 'tentativi', data: righe.map(r => r.tentativi),
+        borderColor: '#0d6efd', tension: 0.25, pointRadius: 2 },
+      { label: 'attesa teorica', data: righe.map(() => teorica),
+        borderColor: '#dc3545', borderDash: [6, 4], pointRadius: 0 }
+    ]
+  }
+});
+{% if risultati.analisi %}
+const isto = {{ risultati.analisi.istogramma | tojson }};
+new Chart(document.getElementById('graficoIsto'), {
+  type: 'bar',
+  data: {
+    labels: isto.etichette,
+    datasets: [
+      { label: 'osservati', data: isto.osservati, backgroundColor: '#0d6efd' },
+      { label: 'attesi (geometrica)', data: isto.attesi, backgroundColor: '#adb5bd' }
+    ]
+  }
+});
+new Chart(document.getElementById('graficoSpettro'), {
+  type: 'line',
+  data: {
+    labels: {{ risultati.analisi.spettro | tojson }}.map((v, i) => i + 1),
+    datasets: [{ label: 'potenza (normalizzata)',
+      data: {{ risultati.analisi.spettro | tojson }},
+      borderColor: '#198754', tension: 0.2, pointRadius: 1 }]
+  },
+  options: { plugins: { legend: { display: false } } }
+});
+{% endif %}
+</script>
+{% else %}
+<div class="alert alert-secondary">Nessun esperimento salvato per questa
+selezione: imposta i parametri e premi "Avvia ricostruzione".</div>
+{% endif %}
+
+<script>
+const fmt = new Intl.NumberFormat('it-IT');
+let eraAttivo = false;
+async function aggiornaMonitor() {
+  try {
+    const r = await fetch('/api/generativa');
+    if (!r.ok) return;
+    const s = await r.json();
+    const box = document.getElementById('monitor');
+    if (s.attivo) {
+      eraAttivo = true;
+      box.style.display = '';
+      document.getElementById('mon-fase').textContent = s.fase +
+        (s.gioco ? ' (' + (s.gioco === 'lotto' ? 'Lotto ' + s.ruota : 'SuperEnalotto') + ')' : '');
+      document.getElementById('mon-trans').textContent = s.transizione + '/' + s.totale;
+      document.getElementById('mon-bersaglio').textContent = s.bersaglio || '—';
+      document.getElementById('mon-tentativi').textContent = fmt.format(s.tentativi_correnti);
+      if (s.gpu && s.gpu.nome) {
+        document.getElementById('mon-gpu').textContent =
+          s.gpu.nome + ': ' + s.gpu.temperatura + ' °C, ' + s.gpu.utilizzo +
+          '% utilizzo, ' + s.gpu.potenza + '/' + s.gpu.potenza_max + ' W, VRAM ' +
+          s.gpu.vram_usata + '/' + s.gpu.vram_totale + ' GB';
+      }
+      const corpo = document.getElementById('mon-righe');
+      corpo.innerHTML = s.righe.slice().reverse().map(r =>
+        '<tr><td>' + r.n + '</td><td>' + r.data + '</td><td>' +
+        r.numeri.join(', ') + '</td><td>' + fmt.format(r.tentativi) +
+        '</td><td>' + r.secondi + '</td></tr>').join('');
+    } else {
+      box.style.display = 'none';
+      if (s.esito) {
+        document.getElementById('esito-riga').style.display = '';
+        document.getElementById('mon-esito').textContent = s.esito;
+      }
+      if (eraAttivo) { location.reload(); }  // mostra i grafici finali
+    }
+  } catch (e) { /* riprova al prossimo giro */ }
+}
+aggiornaMonitor();
+setInterval(aggiornaMonitor, 2000);
+</script>
+{% endblock %}

@@ -1,0 +1,426 @@
+{% extends "base.html" %}
+{% block titolo %}Analisi ML{% endblock %}
+{% block contenuto %}
+<h1 class="h3">Analisi con machine learning</h1>
+<p class="text-muted">Il modello impara la relazione tra lo stato di ogni numero
+prima di un'estrazione (ritardo, frequenze, trend) e la sua uscita, poi viene
+messo alla prova su estrazioni mai viste. Per un gioco equo l'AUC atteso è
+~0.5 e nessuna strategia batte il caso in modo sistematico: il backtest serve
+a misurarlo. I parametri si impostano nella tab <a href="/setup">Setup</a>.</p>
+
+<form class="card mb-4" method="post" action="/ml/calcola">
+  <div class="card-body row g-3 align-items-end">
+    <div class="col-auto">
+      <label class="form-label mb-0">Gioco</label>
+      <select name="gioco" class="form-select"
+              onchange="window.location = '/ml?gioco=' + this.value + '&ruota={{ ruota }}'">
+        <option value="lotto" {{ 'selected' if gioco == 'lotto' }}>Lotto</option>
+        <option value="superenalotto" {{ 'selected' if gioco == 'superenalotto' }}>SuperEnalotto</option>
+      </select>
+    </div>
+    <div class="col-auto" id="sel-ruota" {% if gioco != 'lotto' %}style="display:none"{% endif %}>
+      <label class="form-label mb-0">Ruota</label>
+      <select name="ruota" class="form-select"
+              onchange="window.location = '/ml?gioco={{ gioco }}&ruota=' + this.value">
+        {% for r in RUOTE %}
+        <option value="{{ r }}" {{ 'selected' if r == ruota }}>{{ NOMI_RUOTE[r] }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="col-auto">
+      <button class="btn btn-primary">⚙ Calcola analisi</button>
+    </div>
+    <div class="col-auto text-muted">
+      modello: {{ NOMI_MODELLI[cfg.modello] }} — richiede qualche secondo
+    </div>
+  </div>
+</form>
+
+{% if errore %}<div class="alert alert-danger">{{ errore }}</div>{% endif %}
+
+{% if not risultati %}
+<div class="alert alert-secondary">Nessuna analisi salvata per questa selezione:
+premi “Calcola analisi”.</div>
+{% else %}
+
+<p class="text-muted">Analisi del {{ risultati.calcolata }} —
+{{ 'ruota di ' + NOMI_RUOTE[risultati.ruota] if risultati.ruota else 'SuperEnalotto' }},
+{{ risultati.periodo.estrazioni }} estrazioni ({{ risultati.periodo.dal }} → {{ risultati.periodo.al }}),
+addestramento {{ risultati.periodo.train[0] }} → {{ risultati.periodo.train[1] }},
+backtest {{ risultati.periodo.backtest[0] }} → {{ risultati.periodo.backtest[1] }}{% if risultati.dispositivo %}
+— calcolo su {{ risultati.dispositivo }}{% endif %}.</p>
+
+<div class="row g-3 mb-4">
+  <div class="col-lg-7">
+    <div class="card h-100"><div class="card-body">
+      <h2 class="h5">Punteggi per la prossima estrazione</h2>
+      <table class="table table-sm">
+        <thead><tr><th>Numero</th><th>Punteggio</th><th>Ritardo</th><th>Uscite recenti</th></tr></thead>
+        <tbody>
+        {% for p in risultati.punteggi %}
+        <tr>
+          <td><span class="numero">{{ p.numero }}</span></td>
+          <td>{{ '%.4f' | format(p.punteggio) }}</td>
+          <td>{{ p.ritardo }}</td>
+          <td>{{ p.freq_recente }}</td>
+        </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+      <p class="text-muted small mb-0">Probabilità stimata di uscita per numero
+      (riferimento: {{ '%.4f' | format(5/90) }} per il Lotto, {{ '%.4f' | format(6/90) }} per il SuperEnalotto).
+      Usa la strategia <code>ml</code> nella tab Previsioni per giocare questi numeri.</p>
+    </div></div>
+  </div>
+
+  <div class="col-lg-5">
+    <div class="card mb-3"><div class="card-body">
+      <h2 class="h5">Qualità del modello</h2>
+      <p class="mb-1">AUC sul backtest: <strong>{{ risultati.auc }}</strong>
+      {% if risultati.auc < 0.53 %}
+        <span class="badge bg-secondary">≈ caso: nessun potere predittivo</span>
+      {% else %}
+        <span class="badge bg-warning text-dark">sopra 0.5 — verifica che non sia rumore</span>
+      {% endif %}</p>
+      <p class="text-muted small">AUC 0.5 = il modello non distingue i numeri che
+      usciranno da quelli che non usciranno, come atteso per un gioco equo.</p>
+      <h3 class="h6">Backtest: punti su {{ risultati.backtest.estrazioni }} estrazioni
+        ({{ risultati.backtest.numeri_puntati }} numeri a estrazione)</h3>
+      <table class="table table-sm mb-0">
+        <tr><th>Modello ML</th><td>{{ risultati.backtest.punti.modello_ml }}</td></tr>
+        <tr><th>Ritardatari</th><td>{{ risultati.backtest.punti.ritardatari }}</td></tr>
+        <tr><th>Frequenti</th><td>{{ risultati.backtest.punti.frequenti }}</td></tr>
+        <tr class="table-secondary"><th>Attesa del caso</th><td>{{ risultati.backtest.attesa_caso }}</td></tr>
+      </table>
+    </div></div>
+
+    {% if risultati.importanze %}
+    <div class="card mb-3"><div class="card-body">
+      <h2 class="h5">{{ 'Pesi del meta-modello' if risultati.config.modello == 'stacking' else 'Importanza delle feature' }}</h2>
+      <table class="table table-sm mb-0">
+        {% for nome, v in risultati.importanze %}
+        <tr><th>{{ nome }}</th><td style="width:60%">
+          <div class="progress"><div class="progress-bar" style="width:{{ (v * 100) | round }}%">{{ v }}</div></div>
+        </td></tr>
+        {% endfor %}
+      </table>
+    </div></div>
+    {% endif %}
+
+    {% if risultati.incroci %}
+    <div class="card"><div class="card-body">
+      <h2 class="h5">Controlli incrociati tra i modelli</h2>
+      <h3 class="h6">AUC di ogni modello base sul backtest</h3>
+      <table class="table table-sm">
+        {% for b in risultati.incroci.basi %}
+        <tr><th>{{ b.nome }}</th><td>{{ b.auc }}</td></tr>
+        {% endfor %}
+      </table>
+      <h3 class="h6">Correlazione tra i punteggi (stati intermedi)</h3>
+      <table class="table table-sm table-bordered text-center">
+        <tr><th></th>{% for n in risultati.incroci.nomi %}<th class="small">{{ n.split(' ')[0] }}</th>{% endfor %}</tr>
+        {% for riga in risultati.incroci.correlazioni %}
+        <tr><th class="small">{{ risultati.incroci.nomi[loop.index0].split(' ')[0] }}</th>
+          {% for c in riga %}<td>{{ c }}</td>{% endfor %}</tr>
+        {% endfor %}
+      </table>
+      <h3 class="h6">Accordo sulle top-15 proposte (numeri in comune)</h3>
+      <table class="table table-sm table-bordered text-center mb-0">
+        <tr><th></th>{% for n in risultati.incroci.nomi %}<th class="small">{{ n.split(' ')[0] }}</th>{% endfor %}</tr>
+        {% for riga in risultati.incroci.accordo_top15 %}
+        <tr><th class="small">{{ risultati.incroci.nomi[loop.index0].split(' ')[0] }}</th>
+          {% for c in riga %}<td>{{ c }}</td>{% endfor %}</tr>
+        {% endfor %}
+      </table>
+      <p class="text-muted small mt-2 mb-0">Correlazioni basse e poco accordo
+      = i modelli vedono cose diverse (tipico del rumore); correlazioni alte
+      = stanno imparando lo stesso segnale (o lo stesso artefatto).</p>
+    </div></div>
+    {% endif %}
+  </div>
+</div>
+
+<div class="card border-warning mb-4"><div class="card-body">
+  <h2 class="h5">Scanner di bias (stile Draft Lottery 1970)</h2>
+  <p class="text-muted">L'unica cosa che la statistica può davvero scovare in
+  una lotteria è un difetto del meccanismo. Oltre all'uniformità globale,
+  verifica che la distribuzione dei numeri non dipenda dalla posizione di
+  estrazione, dal mese o dal giorno della settimana (test chi-quadro di
+  indipendenza, soglia con correzione di Bonferroni).</p>
+  <form method="post" action="/ml/bias" class="mb-3">
+    <input type="hidden" name="gioco" value="{{ gioco }}">
+    <input type="hidden" name="ruota" value="{{ ruota }}">
+    <button class="btn btn-warning">🔍 Esegui scansione</button>
+  </form>
+  {% if bias %}
+    <p class="text-muted small mb-2">Scansione del {{ bias.calcolata }} su
+    {{ bias.estrazioni }} estrazioni ({{ bias.dal }} → {{ bias.al }}) —
+    soglia di anomalia: p &lt; {{ bias.soglia }}.</p>
+    <table class="table table-sm mb-2">
+      <thead><tr><th>Test</th><th>χ²</th><th>g.d.l.</th><th>p-value</th><th>Esito</th></tr></thead>
+      <tbody>
+      {% for t in bias.test %}
+        <tr class="{{ 'table-warning' if t.anomalo }}">
+          <td>{{ t.nome }}<div class="text-muted small">{{ t.descrizione }}</div></td>
+          <td>{{ t.chi2 }}</td><td>{{ t.gdl }}</td><td>{{ t.p_value }}</td>
+          <td>{% if t.anomalo %}⚠ <strong>anomalo</strong>{% else %}✓ regolare{% endif %}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    {% if bias.anomalie %}
+      <p class="text-warning mb-0">⚠ {{ bias.anomalie }} test sotto soglia:
+      prima di trarre conclusioni, ripeti su più periodi e considera i difetti
+      dei dati di partenza (con molti test qualche falso positivo è atteso).</p>
+    {% else %}
+      <p class="text-success mb-0">✓ Nessuna anomalia: il meccanismo di
+      estrazione appare regolare su tutti i fronti testati.</p>
+    {% endif %}
+  {% endif %}
+</div></div>
+
+<div class="card border-info mb-4"><div class="card-body">
+  <h2 class="h5">Generatore neurale</h2>
+  <p class="text-muted">Un comitato di reti neurali impara a mappare le ultime
+  {{ cfg.gen_lag }} estrazioni nella successiva (tutto lo storico tranne
+  l'ultimo 10%, tenuto come test), poi genera {{ cfg.gen_simulazioni }}
+  estrazioni perturbando gli ingressi e ne propone la media. Parametri nella
+  tab <a href="/setup">Setup</a>.</p>
+  {% if gen_stato.attivo %}
+  <div class="alert alert-info d-flex justify-content-between align-items-center mb-3">
+    <div>⏳ <strong>Generazione in corso</strong>
+      ({{ 'Lotto, ruota ' + gen_stato.ruota if gen_stato.gioco == 'lotto' else 'SuperEnalotto' }}):
+      {{ gen_stato.testo }}</div>
+    <form method="post" action="/ml/genera/ferma" class="mb-0">
+      <input type="hidden" name="gioco" value="{{ gioco }}">
+      <input type="hidden" name="ruota" value="{{ ruota }}">
+      <button class="btn btn-sm btn-danger">■ Ferma</button>
+    </form>
+  </div>
+  <script>setTimeout(function () { window.location.reload(); }, 3000);</script>
+  {% else %}
+  <form method="post" action="/ml/genera" class="mb-1">
+    <input type="hidden" name="gioco" value="{{ gioco }}">
+    <input type="hidden" name="ruota" value="{{ ruota }}">
+    <button class="btn btn-info">🧠 Addestra e genera</button>
+    <span class="text-muted small">gira in background: puoi seguire
+    l'avanzamento e fermarla in ogni momento</span>
+  </form>
+  {% if gen_stato.esito %}
+  <p class="small text-muted mb-3">Ultima generazione: {{ gen_stato.esito }}.</p>
+  {% endif %}
+  {% endif %}
+  {% if generatore %}
+    <p class="fs-4 mb-1">
+      {% for n in generatore.numeri %}<span class="numero">{{ n }}</span>{% endfor %}
+    </p>
+    <p class="text-muted small mb-2">Media di {{ generatore.generate }}
+    estrazioni generate il {{ generatore.calcolata }} —
+    {{ generatore.config.gen_reti }} reti ({{ generatore.neuroni | join('×') }} neuroni),
+    addestrate su {{ generatore.periodo.campioni_train }} campioni,
+    testate su {{ generatore.periodo.campioni_test }}
+    {% if generatore.dispositivo %} — calcolo su {{ generatore.dispositivo }}{% endif %}.</p>
+    <table class="table table-sm" style="max-width:30rem">
+      <thead><tr><th>Posizione</th><th>Media generata</th><th>±σ</th><th>Numero</th></tr></thead>
+      <tbody>
+      {% for p in generatore.posizioni %}
+        <tr><td>{{ p.posizione }}º</td><td>{{ p.media }}</td><td>{{ p.std }}</td>
+            <td><span class="numero">{{ p.numero }}</span></td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    <p class="mb-2">Errore medio sul test (MAE): <strong>{{ generatore.mae_medio }}</strong>
+      per rete {{ generatore.mae_reti | join(', ') }} —
+      baseline “media storica”: <strong>{{ generatore.mae_baseline }}</strong>.
+      {% if generatore.mae_medio >= generatore.mae_baseline %}
+      <span class="badge bg-secondary">la rete non batte la media storica: conferma l'assenza di segnale</span>
+      {% else %}
+      <span class="badge bg-warning text-dark">sotto la baseline — verifica che non sia rumore</span>
+      {% endif %}</p>
+    <form method="post" action="/giocate" class="row g-2">
+      <input type="hidden" name="gioco" value="{{ gioco }}">
+      <input type="hidden" name="ruota" value="{{ ruota if gioco == 'lotto' else '' }}">
+      <input type="hidden" name="numeri" value="{{ generatore.numeri | join(',') }}">
+      <input type="hidden" name="strategia" value="generatore-neurale">
+      <div class="col-auto flex-grow-1">
+        <input type="text" name="note" class="form-control form-control-sm" placeholder="Note (facoltative)">
+      </div>
+      <div class="col-auto"><button class="btn btn-sm btn-success">💾 Salva tra le giocate</button></div>
+    </form>
+  {% endif %}
+</div></div>
+
+<div class="card border-dark mb-4"><div class="card-body">
+  <h2 class="h5">Algoritmo MASTER — grid search neurale</h2>
+  <p class="text-muted">Prova sistematicamente reti di tipologia e grandezza
+  diverse (8 architetture × 4 lag × 2 regimi di epoche × 2 comitati ×
+  3 finestre di storico = <strong>384 configurazioni</strong>), con
+  {{ cfg.master_pausa }} secondi di riposo GPU tra una generazione e la
+  successiva (regolabile nel <a href="/setup">Setup</a>). Ogni previsione
+  finisce nella matrice, riconoscibile dalle impostazioni della rete che l'ha
+  generata; i numeri finali escono da tre algoritmi deterministici sulla
+  matrice. La matrice si salva dopo ogni configurazione: puoi fermare quando
+  vuoi.</p>
+
+  {% if gpu %}
+  <p class="small mb-3">🖥 <strong>{{ gpu.nome }}</strong>
+    <span class="badge bg-info text-dark">live</span>:
+    <span id="gpu-temp" class="badge {{ 'bg-success' if gpu.temperatura < 75 else ('bg-warning text-dark' if gpu.temperatura < 84 else 'bg-danger') }}">{{ gpu.temperatura }} °C</span>
+    <span id="gpu-util" class="badge bg-secondary">{{ gpu.utilizzo }}% utilizzo</span>
+    <span id="gpu-vram" class="badge bg-secondary">VRAM {{ gpu.vram_usata }}/{{ gpu.vram_totale }} GB</span>
+    <span id="gpu-pw" class="badge bg-secondary">{{ gpu.potenza }}/{{ gpu.potenza_max }} W</span>
+    <span class="text-muted">— verde &lt;75 °C, giallo 75-84 °C,
+    rosso ≥84 °C (soglia di autoprotezione: la scheda riduce da sola le
+    frequenze)</span></p>
+  <script>
+  async function aggiornaGpu() {
+    try {
+      const risposta = await fetch('/api/gpu');
+      if (!risposta.ok) return;
+      const g = await risposta.json();
+      if (!g || !g.nome) return;
+      const temp = document.getElementById('gpu-temp');
+      temp.textContent = g.temperatura + ' °C';
+      temp.className = 'badge ' + (g.temperatura < 75 ? 'bg-success'
+        : (g.temperatura < 84 ? 'bg-warning text-dark' : 'bg-danger'));
+      document.getElementById('gpu-util').textContent = g.utilizzo + '% utilizzo';
+      document.getElementById('gpu-vram').textContent =
+        'VRAM ' + g.vram_usata + '/' + g.vram_totale + ' GB';
+      document.getElementById('gpu-pw').textContent =
+        g.potenza + '/' + g.potenza_max + ' W';
+    } catch (errore) { /* server momentaneamente non raggiungibile */ }
+  }
+  setInterval(aggiornaGpu, 2000);
+  </script>
+  {% endif %}
+
+  {% if master_stato.attivo %}
+  <div class="alert alert-info d-flex justify-content-between align-items-center mb-3">
+    <div>⏳ <strong>MASTER in corso</strong>
+      ({{ 'Lotto, ruota ' + master_stato.ruota if master_stato.gioco == 'lotto' else 'SuperEnalotto' }}):
+      {{ master_stato.testo }}</div>
+    <form method="post" action="/ml/master/ferma" class="mb-0">
+      <input type="hidden" name="gioco" value="{{ gioco }}">
+      <input type="hidden" name="ruota" value="{{ ruota }}">
+      <button class="btn btn-sm btn-danger">■ Ferma</button>
+    </form>
+  </div>
+  <script>setTimeout(function () { window.location.reload(); }, 3000);</script>
+  {% else %}
+  <form method="post" action="/ml/master" class="mb-1">
+    <input type="hidden" name="gioco" value="{{ gioco }}">
+    <input type="hidden" name="ruota" value="{{ ruota }}">
+    <button class="btn btn-dark">👑 Avvia MASTER</button>
+    <span class="text-muted small">durata indicativa: alcune ore
+    (il tempo non è un problema)</span>
+  </form>
+  {% if master_stato.esito %}
+  <p class="small text-muted mb-3">Ultimo MASTER: {{ master_stato.esito }}.</p>
+  {% endif %}
+  {% endif %}
+
+  {% if master %}
+  <hr>
+  <p class="text-muted small">Matrice del {{ master.aggiornata }} —
+  stato: <strong>{{ master.stato }}</strong>,
+  {{ master.completate }}/{{ master.totale }} configurazioni
+  (avviato il {{ master.avviata }}, pausa {{ master.pausa }}s).</p>
+
+  {% if master.sintesi %}
+  <div class="row g-3 mb-3">
+    {% for chiave, titolo, descr in [
+        ('voto_pesato', 'Voto pesato (finale)', 'ogni configurazione vota i suoi numeri con peso 1/MAE'),
+        ('voto_semplice', 'Voto semplice', 'i numeri proposti da più configurazioni'),
+        ('media_posizioni', 'Media per posizione', 'media dei numeri di ogni posizione su tutta la matrice')] %}
+    <div class="col-lg-4">
+      <div class="card h-100 {{ 'border-primary' if loop.first }}"><div class="card-body">
+        <h3 class="h6">{{ titolo }}</h3>
+        <p class="mb-1">
+          {% for n in master.sintesi[chiave] %}<span class="numero">{{ n }}</span>{% endfor %}
+        </p>
+        <p class="text-muted small mb-2">{{ descr }}</p>
+        <form method="post" action="/giocate" class="row g-1">
+          <input type="hidden" name="gioco" value="{{ master.gioco }}">
+          <input type="hidden" name="ruota" value="{{ master.ruota or '' }}">
+          <input type="hidden" name="numeri" value="{{ master.sintesi[chiave] | join(',') }}">
+          <input type="hidden" name="strategia" value="master-{{ chiave | replace('_', '-') }}">
+          <div class="col-12">
+            <button class="btn btn-sm btn-success">💾 Salva tra le giocate</button>
+          </div>
+        </form>
+      </div></div>
+    </div>
+    {% endfor %}
+  </div>
+
+  <p class="small mb-1"><strong>Numeri più votati dalla matrice:</strong>
+    {% for n, c in master.sintesi.frequenze %}
+    <span class="numero {{ 'oro' if loop.index <= 5 }}">{{ n }}</span><small class="text-muted me-1">×{{ c }}</small>
+    {% endfor %}
+  </p>
+  <p class="small text-muted">Configurazione col miglior MAE sul test:
+    #{{ master.sintesi.migliore.n }} [{{ master.sintesi.migliore.architettura }}]
+    lag {{ master.sintesi.migliore.lag }},
+    {{ master.sintesi.migliore.epoche }} epoche (paz. {{ master.sintesi.migliore.pazienza }}),
+    {{ master.sintesi.migliore.reti }} reti,
+    storico {{ master.sintesi.migliore.finestra or 'tutto' }} —
+    MAE {{ master.sintesi.migliore.mae }} (baseline {{ master.sintesi.migliore.baseline }})
+    → {{ master.sintesi.migliore.numeri | join(', ') }}</p>
+  {% endif %}
+
+  <details>
+    <summary class="text-muted">Matrice completa ({{ master.completate }} righe)</summary>
+    <div style="max-height: 24rem; overflow-y: auto" class="mt-2">
+      <table class="table table-sm table-striped small">
+        <thead><tr><th>#</th><th>Architettura</th><th>Lag</th><th>Epoche</th>
+          <th>Paz.</th><th>Reti</th><th>Storico</th><th>Numeri generati</th>
+          <th>MAE</th><th>s</th></tr></thead>
+        <tbody>
+        {% for r in master.righe %}
+        <tr>
+          <td>{{ r.n }}</td><td>{{ r.architettura }}</td><td>{{ r.lag }}</td>
+          <td>{{ r.epoche }}</td><td>{{ r.pazienza }}</td><td>{{ r.reti }}</td>
+          <td>{{ r.finestra or 'tutto' }}</td>
+          <td>{% if r.errore %}<span class="text-danger">{{ r.errore }}</span>
+              {% else %}{{ r.numeri | join(', ') }}{% endif %}</td>
+          <td>{{ r.mae }}</td><td>{{ r.durata }}</td>
+        </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </details>
+  {% endif %}
+</div></div>
+
+<div class="row g-3">
+  <div class="col-lg-5">
+    <div class="card h-100"><div class="card-body">
+      <h2 class="h5">Test di uniformità (chi-quadro)</h2>
+      <p class="mb-1">Statistica: {{ risultati.uniformita.chi2 }} —
+        p-value: <strong>{{ risultati.uniformita.p_value }}</strong></p>
+      {% if risultati.uniformita.uniforme %}
+        <p class="text-success mb-0">✓ Le frequenze osservate sono compatibili con
+        un'estrazione equa: nessun numero è statisticamente “favorito”.</p>
+      {% else %}
+        <p class="text-warning mb-0">⚠ Le frequenze deviano dall'uniformità più di
+        quanto atteso dal caso (p &lt; 0.05). Con molti test qualche falso positivo
+        è normale: ricontrolla su più periodi prima di trarre conclusioni.</p>
+      {% endif %}
+    </div></div>
+  </div>
+  <div class="col-lg-7">
+    <div class="card h-100"><div class="card-body">
+      <h2 class="h5">Gruppi di co-occorrenza (k-means)</h2>
+      <p class="text-muted small">Numeri che storicamente tendono a comparire
+      nelle stesse estrazioni, raggruppati sul profilo di co-occorrenza.</p>
+      {% for gruppo in risultati.clusters %}
+      <p class="mb-1"><strong>G{{ loop.index }}</strong>
+        {% for n in gruppo %}<span class="numero {{ 'grigio' if loop.index0 % 2 }}">{{ n }}</span>{% endfor %}
+      </p>
+      {% endfor %}
+    </div></div>
+  </div>
+</div>
+{% endif %}
+{% endblock %}

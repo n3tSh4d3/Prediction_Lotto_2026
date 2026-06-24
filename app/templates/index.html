@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+{% block contenuto %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h1 class="h3 mb-0">Dashboard</h1>
+  <form method="post" action="/aggiorna">
+    <button class="btn btn-primary">⟳ Aggiorna estrazioni</button>
+  </form>
+</div>
+
+{% if ultimo_agg %}
+<p class="text-muted">Ultimo aggiornamento: {{ ultimo_agg }}
+{% if esito_agg %}
+  {% for gioco, e in esito_agg.items() %}
+    — {{ gioco }}:
+    {% if e.errore %}<span class="text-danger">errore ({{ e.errore }})</span>
+    {% else %}{{ e.righe }} righe{% endif %}
+  {% endfor %}
+{% endif %}
+</p>
+{% endif %}
+
+<div class="row g-3 mb-4">
+  <div class="col-md-6">
+    <div class="card h-100"><div class="card-body">
+      <h2 class="h5">Archivio Lotto</h2>
+      {% if riepilogo.lotto.righe %}
+        <p class="mb-0">{{ riepilogo.lotto.righe }} estrazioni-ruota<br>
+        dal {{ riepilogo.lotto.dal }} al {{ riepilogo.lotto.al }}</p>
+      {% else %}
+        <p class="text-warning mb-0">Archivio vuoto — premi “Aggiorna estrazioni”.</p>
+      {% endif %}
+    </div></div>
+  </div>
+  <div class="col-md-6">
+    <div class="card h-100"><div class="card-body">
+      <h2 class="h5">Archivio SuperEnalotto</h2>
+      {% if riepilogo.superenalotto.righe %}
+        <p class="mb-0">{{ riepilogo.superenalotto.righe }} concorsi<br>
+        dal {{ riepilogo.superenalotto.dal }} al {{ riepilogo.superenalotto.al }}</p>
+      {% else %}
+        <p class="text-warning mb-0">Archivio vuoto — premi “Aggiorna estrazioni”.</p>
+      {% endif %}
+    </div></div>
+  </div>
+</div>
+
+{% if data_lotto %}
+<div class="card mb-4"><div class="card-body">
+  <h2 class="h5">Ultima estrazione Lotto — {{ data_lotto }}</h2>
+  <table class="table table-sm align-middle mb-0">
+    {% for r in ruote %}
+    <tr>
+      <th style="width:8rem">{{ NOMI_RUOTE[r.ruota] }}</th>
+      <td>{% for i in [r.n1, r.n2, r.n3, r.n4, r.n5] %}<span class="numero">{{ i }}</span>{% endfor %}</td>
+    </tr>
+    {% endfor %}
+  </table>
+</div></div>
+{% endif %}
+
+{% if se %}
+<div class="card"><div class="card-body">
+  <h2 class="h5">Ultimo concorso SuperEnalotto — n. {{ se.concorso }} del {{ se.data }}</h2>
+  {% for i in [se.n1, se.n2, se.n3, se.n4, se.n5, se.n6] %}<span class="numero">{{ i }}</span>{% endfor %}
+  <span class="numero rosso" title="Jolly">{{ se.jolly }}</span>
+  {% if se.superstar %}<span class="numero oro" title="SuperStar">{{ se.superstar }}</span>{% endif %}
+  <p class="text-muted small mt-2 mb-0">blu = sestina, rosso = Jolly, oro = SuperStar</p>
+</div></div>
+{% endif %}
+{% endblock %}
